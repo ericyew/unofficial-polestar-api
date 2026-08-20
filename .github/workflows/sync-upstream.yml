@@ -48,7 +48,7 @@ jobs:
 
       - name: Fetch recent upstream releases
         run: |
-          curl -sf "https://api.github.com/repos/${UPSTREAM_REPO}/releases?per_page=15" \
+          curl -sf "https://api.github.com/repos/${UPSTREAM_REPO}/releases?per_page=1" \
             | jq -c '[.[] | select(.draft==false)] | sort_by(.created_at) | .[]' \
             > /tmp/upstream-releases.jsonl
 
