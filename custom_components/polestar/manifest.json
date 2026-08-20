@@ -1,13 +1,13 @@
 {
   "domain": "polestar",
   "name": "Unofficial Polestar",
-  "codeowners": ["@kildahldev"],
+  "codeowners": ["@ericyew"],
   "config_flow": true,
   "dependencies": ["http"],
-  "documentation": "https://github.com/kildahldev/unofficial-polestar-api/blob/main/ha_integration_README.md",
+  "documentation": "https://github.com/ericyew/unofficial-polestar-api/blob/main/ha_integration_README.md",
   "integration_type": "device",
   "iot_class": "cloud_push",
-  "issue_tracker": "https://github.com/kildahldev/unofficial-polestar-api/issues",
-  "requirements": ["unofficial-polestar-api==0.3.0"],
-  "version": "0.3.0"
+  "issue_tracker": "https://github.com/ericyew/unofficial-polestar-api/issues",
+  "requirements": ["unofficial-polestar-api @ git+https://github.com/ericyew/unofficial-polestar-api.git@v0.3.1"],
+  "version": "0.3.1"
 }
