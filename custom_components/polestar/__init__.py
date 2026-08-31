@@ -15,7 +15,7 @@ from .const import CONF_DEMO, CONF_VIN, DOMAIN, PLATFORMS
 from .coordinator import PolestarCoordinator
 from .demo import DemoVehicle
 from polestar_api import PolestarApi, Vehicle
-from polestar_api.exceptions import AuthError
+from polestar_api.exceptions import ApiError, AuthError
 from .services import async_register_services, async_unregister_services
 from .token_store import HassTokenStore
 
@@ -37,7 +37,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await api.async_init()
-        vehicles = await api.get_vehicles()
+        try:
+            vehicles = await api.get_vehicles()
+        except ApiError as err:
+            failure = (
+                f"HTTP {err.status_code}"
+                if err.status_code is not None
+                else "GraphQL/API error"
+            )
+            _LOGGER.warning("Vehicle list lookup failed (%s); using configured VIN", failure)
+            vehicles = []
     except AuthError as err:
         await api.close()
         raise ConfigEntryAuthFailed(str(err)) from err
