@@ -11,10 +11,11 @@ from typing import TYPE_CHECKING, Any
 
 from grpclib.const import Status as GrpcStatus
 from grpclib.exceptions import GRPCError
+from homeassistant.components import persistent_notification
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from polestar_api.exceptions import AuthError, TokenExpiredError
+from polestar_api.exceptions import AuthError, TokenExpiredError, is_unsupported_feature_error
 from polestar_api.models.availability import Availability
 from polestar_api.models.battery import Battery
 from polestar_api.models.charge_location import ChargeLocation
@@ -62,6 +63,15 @@ _COMMAND_INVOCATION_SUCCESS = {
     InvocationStatus.DELIVERED,
     InvocationStatus.SUCCESS,
 }
+# Coordinator attributes to re-read once a command finishes, keyed by invocation method.
+_INVOCATION_REFRESH_ATTRS: dict[str, tuple[str, ...]] = {
+    "Lock": ("exterior",),
+    "Unlock": ("exterior",),
+    "WindowControl": ("exterior",),
+    "ClimatizationStart": ("climate",),
+    "ClimatizationStop": ("climate",),
+    "PreCleaning": ("precleaning",),
+}
 _COMMAND_RESPONSE_STATUS_SUCCESS = {
     ResponseStatusCode.SUCCESS,
     ResponseStatusCode.WARNING,
@@ -101,8 +111,8 @@ class PolestarVehicleData:
     target_soc: TargetSocResponse | None = None
     amp_limit: AmpLimitResponse | None = None
     charge_timer: ChargeTimerResponse | None = None
-    charge_locations: list[ChargeLocation] = field(default_factory=list)
-    current_charge_location: dict[str, Any] = field(default_factory=dict)
+    charge_locations: list[ChargeLocation] | None = None
+    current_charge_location: dict[str, Any] | None = None
     climate_timers: list[ParkingClimateTimer] = field(default_factory=list)
     climate_timer_settings: ParkingClimateTimerSettings | None = None
 
@@ -157,6 +167,41 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._stream_tasks: dict[str, asyncio.Task[None]] = {}
         self._unsupported_streams: set[str] = set()
         self._unsupported_commands: set[str] = set()
+        self._unsupported_fetches: set[str] = set()
+        self._command_failure_listeners: list[Callable[[], None]] = []
+        add_listener = getattr(vehicle, "add_invocation_listener", None)
+        self._remove_invocation_listener = add_listener(self._handle_invocation_result) if add_listener else None
+
+    def async_add_command_failure_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call *listener* when a command that was accepted later fails; returns an unsubscribe."""
+        self._command_failure_listeners.append(listener)
+
+        def remove() -> None:
+            if listener in self._command_failure_listeners:
+                self._command_failure_listeners.remove(listener)
+
+        return remove
+
+    def _handle_invocation_result(self, method: str, response: Any) -> None:
+        """React to the final outcome of a remote command (it returns before the car has acted)."""
+        attrs = _INVOCATION_REFRESH_ATTRS.get(method, ())
+        if response.status in _COMMAND_INVOCATION_SUCCESS:
+            if attrs:
+                self._schedule_background_refresh(*attrs)
+            return
+
+        reason = response.message or response.status.name.replace("_", " ").lower()
+        _LOGGER.warning("Polestar %s command for %s failed: %s", method, self.vehicle.vin, reason)
+        persistent_notification.async_create(
+            self.hass,
+            f"The {method} command was accepted but the car did not complete it: {reason}.",
+            title="Polestar command failed",
+            notification_id=f"polestar_command_failed_{self.vehicle.vin}_{method}",
+        )
+        for listener in list(self._command_failure_listeners):
+            listener()
+        if attrs:
+            self._schedule_background_refresh(*attrs)
 
     @staticmethod
     def _command_succeeded(response: Any) -> bool:
@@ -226,6 +271,10 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
             raise HomeAssistantError(self._command_error_message(response, error_message))
         return response
 
+    def is_fetch_supported(self, attr: str) -> bool:
+        """Return whether the car supports the data behind a coordinator attribute."""
+        return attr not in self._unsupported_fetches
+
     def is_command_supported(self, capability: str) -> bool:
         """Return whether a command capability is supported by the car."""
         return capability not in self._unsupported_commands
@@ -253,10 +302,10 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         """Return the currently active saved charge location, if any."""
         if self.data is None:
             return None
-        location_id = self.data.current_charge_location.get("location_id")
+        location_id = (self.data.current_charge_location or {}).get("location_id")
         if not location_id:
             return None
-        for location in self.data.charge_locations:
+        for location in self.data.charge_locations or ():
             if location.location_id == location_id:
                 return location
         return None
@@ -267,19 +316,25 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         previous: PolestarVehicleData,
     ) -> tuple[dict[str, Any], int]:
         """Fetch a subset of vehicle attributes concurrently."""
-        attr_names = tuple(dict.fromkeys(attrs))
+        requested = tuple(dict.fromkeys(attrs))
+        attr_names = tuple(attr for attr in requested if attr not in self._unsupported_fetches)
         coroutines = [
             asyncio.wait_for(getattr(self.vehicle, _FETCH_ATTR_LOOKUP[attr])(), timeout=15)
             for attr in attr_names
         ]
         results = await asyncio.gather(*coroutines, return_exceptions=True)
 
-        values: dict[str, Any] = {}
+        values: dict[str, Any] = {
+            attr: getattr(previous, attr) for attr in requested if attr in self._unsupported_fetches
+        }
         successful_fetches = 0
         for attr, result in zip(attr_names, results, strict=True):
             if isinstance(result, (AuthError, TokenExpiredError)):
                 raise ConfigEntryAuthFailed(str(result)) from result
             if isinstance(result, Exception):
+                if is_unsupported_feature_error(result):
+                    _LOGGER.info("%s is not supported by vehicle %s; it will not be polled", attr, self.vehicle.vin)
+                    self._unsupported_fetches.add(attr)
                 _LOGGER.debug("Failed to fetch %s for %s: %s", attr, self.vehicle.vin, result)
                 values[attr] = getattr(previous, attr)
                 continue
@@ -305,6 +360,17 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._restart_dead_streams()
         return data
 
+    def _async_push_data(self, data: PolestarVehicleData) -> None:
+        """Publish new data to listeners without restarting the poll timer.
+
+        ``async_set_updated_data`` reschedules the next full poll. Streams push
+        roughly every minute, so using it here meant the periodic poll never ran
+        and poll-only values (target SOC, amp limit, charge timers) went stale.
+        """
+        self.data = data
+        self.last_update_success = True
+        self.async_update_listeners()
+
     async def async_request_attrs_refresh(self, *attrs: str) -> None:
         """Refresh only the requested coordinator attributes."""
         if not attrs:
@@ -319,7 +385,7 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         data = replace(previous, **values)
         if "software" in values:
             self._update_installed_version_cache(data.software)
-        self.async_set_updated_data(data)
+        self._async_push_data(data)
 
     _STREAMS: dict[str, str] = {
         "battery": "stream_battery",
@@ -361,6 +427,12 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
 
     async def async_shutdown(self) -> None:
         """Cancel any running stream tasks."""
+        if self._remove_invocation_listener is not None:
+            self._remove_invocation_listener()
+            self._remove_invocation_listener = None
+        cancel_follow_ups = getattr(self.vehicle, "cancel_invocation_follow_ups", None)
+        if cancel_follow_ups is not None:
+            await cancel_follow_ups()
         for task in self._stream_tasks.values():
             task.cancel()
         if self._stream_tasks:
@@ -381,7 +453,7 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
                     consecutive_failures = 0
                     current = self.data or PolestarVehicleData()
                     merged_value = self._merge_partial_update(attr, getattr(current, attr), value)
-                    self.async_set_updated_data(replace(current, **{attr: merged_value}))
+                    self._async_push_data(replace(current, **{attr: merged_value}))
             except asyncio.CancelledError:
                 raise
             except (AuthError, TokenExpiredError) as err:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
 
 from .models.availability import Availability
@@ -404,6 +404,18 @@ class Vehicle:
         """Real-time pre-cleaning status updates."""
         async for status in self._precleaning.stream():
             yield status
+
+    def add_invocation_listener(self, listener) -> Callable[[], None]:
+        """Be told the final outcome of each remote command (lock, climate, honk, ...).
+
+        *listener(method, response)* receives the last ``InvocationResponse`` the
+        server sent for the command. Returns a function that removes the listener.
+        """
+        return self._invocation.add_listener(listener)
+
+    async def cancel_invocation_follow_ups(self) -> None:
+        """Stop following in-flight command streams (call on shutdown)."""
+        await self._invocation.cancel_follow_ups()
 
     async def start_precleaning(self) -> None:
         """Start cabin air quality pre-cleaning."""

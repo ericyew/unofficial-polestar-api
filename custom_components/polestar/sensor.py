@@ -74,24 +74,25 @@ def _heating_intensity_name(value: HeatingIntensity | None) -> str | None:
 
 
 def _current_charge_location_state(data: PolestarVehicleData) -> str | None:
-    location_id = data.current_charge_location.get("location_id")
+    location_id = (data.current_charge_location or {}).get("location_id")
     if not location_id:
         return None
-    for location in data.charge_locations:
+    for location in data.charge_locations or ():
         if location.location_id == location_id:
             return location.location_alias or location.location_id
     return location_id
 
 
 def _current_charge_location_attrs(data: PolestarVehicleData) -> dict[str, Any]:
-    location_id = data.current_charge_location.get("location_id")
+    current = data.current_charge_location or {}
+    location_id = current.get("location_id")
     if not location_id:
         return {}
     attrs: dict[str, Any] = {
         "location_id": location_id,
-        "arrived_at": data.current_charge_location.get("arrived_at"),
+        "arrived_at": current.get("arrived_at"),
     }
-    for location in data.charge_locations:
+    for location in data.charge_locations or ():
         if location.location_id == location_id:
             attrs.update(serialize_charge_location(location))
             break
@@ -540,8 +541,8 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
         name="Charge locations",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: len(d.charge_locations),
-        attrs_fn=lambda d: {"locations": [serialize_charge_location(location) for location in d.charge_locations]},
+        value_fn=lambda d: len(d.charge_locations) if d.charge_locations is not None else None,
+        attrs_fn=lambda d: {"locations": [serialize_charge_location(location) for location in d.charge_locations or ()]},
     ),
     PolestarSensorDescription(
         key="current_charge_location",

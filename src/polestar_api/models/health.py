@@ -19,6 +19,7 @@ class ServiceWarning(IntEnum):
     REGULAR_MAINTENANCE_TIME = 6
     ENGINE_HOURS_TIME = 7
     DISTANCE_DRIVEN_TIME = 8
+    REGULAR_MAINTENANCE_OVERDUE = 9
 
 
 class ExteriorLightWarning(IntEnum):

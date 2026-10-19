@@ -13,7 +13,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .coordinator import PolestarCoordinator
-from .entity import OptimisticStateMixin, PolestarEntity
+from .entity import OptimisticStateMixin, PolestarEntity, async_filter_supported_entities
 from polestar_api.models.charging import ChargeTargetLevelSettingType
 from polestar_api.models.climatization import HeatingIntensity
 from polestar_api.models.parking_climate_timer import (
@@ -142,13 +142,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up Polestar select entities."""
     data = hass.data[DOMAIN][entry.entry_id]
-    entities = []
     for coordinator in data["coordinators"].values():
+        entities = []
         for description in SELECTS:
             entities.append(PolestarSelect(coordinator, description))
         for description in TIMER_SETTINGS_SELECTS:
             entities.append(PolestarTimerSettingsSelect(coordinator, description))
-    async_add_entities(entities)
+        async_add_entities(async_filter_supported_entities(hass, coordinator, "select", entities))
 
 
 class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, SelectEntity):
@@ -224,6 +224,7 @@ class PolestarTimerSettingsSelect(OptimisticStateMixin, PolestarEntity, SelectEn
     """Select entity for API-backed parking climate timer default settings."""
 
     entity_description: PolestarSelectDescription
+    required_fetch = "climate_timer_settings"
 
     def __init__(self, coordinator: PolestarCoordinator, description: PolestarSelectDescription) -> None:
         super().__init__(coordinator)

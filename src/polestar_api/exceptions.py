@@ -21,6 +21,18 @@ class ApiError(PolestarError):
         self.status_code = status_code
 
 
+def is_unsupported_feature_error(err: BaseException) -> bool:
+    """Return True if *err* is Polestar's "Functionality not supported" gRPC answer."""
+    from grpclib.const import Status
+    from grpclib.exceptions import GRPCError
+
+    return (
+        isinstance(err, GRPCError)
+        and err.status == Status.UNIMPLEMENTED
+        and "Functionality not supported" in (err.message or "")
+    )
+
+
 class NetworkError(PolestarError):
     """A network-level error occurred (connection refused, DNS, timeout)."""
 

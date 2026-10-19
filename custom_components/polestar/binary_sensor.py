@@ -156,7 +156,9 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
         key="at_charge_location",
         name="At charge location",
         icon="mdi:map-marker-radius",
-        value_fn=lambda d: bool(d.current_charge_location.get("location_id")),
+        value_fn=lambda d: (
+            bool(d.current_charge_location.get("location_id")) if d.current_charge_location is not None else None
+        ),
     ),
     PolestarBinarySensorDescription(
         key="tyre_warning",

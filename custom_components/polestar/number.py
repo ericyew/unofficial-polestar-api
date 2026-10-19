@@ -16,7 +16,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .coordinator import PolestarCoordinator, PolestarVehicleData
-from .entity import OptimisticStateMixin, PolestarEntity
+from .entity import OptimisticStateMixin, PolestarEntity, async_filter_supported_entities
 from polestar_api.models.charging import ChargeTargetLevelSettingType
 from polestar_api.models.parking_climate_timer import ParkingClimateTimerSettings
 
@@ -28,6 +28,7 @@ class PolestarNumberDescription(NumberEntityDescription):
     value_fn: Callable[[PolestarCoordinator], float | None]
     set_fn: Callable[[PolestarCoordinator, float], Awaitable[Any] | None]
     restore_state: bool = False
+    fetch_attr: str | None = None
 
 
 NUMBERS: tuple[PolestarNumberDescription, ...] = (
@@ -44,6 +45,7 @@ NUMBERS: tuple[PolestarNumberDescription, ...] = (
     ),
     PolestarNumberDescription(
         key="amp_limit",
+        fetch_attr="amp_limit",
         name="Charging amp limit",
         icon="mdi:current-ac",
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -81,12 +83,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up Polestar number entities."""
     data = hass.data[DOMAIN][entry.entry_id]
-    entities = []
     for coordinator in data["coordinators"].values():
+        entities = []
         for desc in NUMBERS:
             entities.append(PolestarNumber(coordinator, desc))
         entities.append(PolestarTimerTemperatureNumber(coordinator))
-    async_add_entities(entities)
+        async_add_entities(async_filter_supported_entities(hass, coordinator, "number", entities))
 
 
 class PolestarNumber(OptimisticStateMixin, PolestarEntity, RestoreEntity, NumberEntity):
@@ -97,6 +99,7 @@ class PolestarNumber(OptimisticStateMixin, PolestarEntity, RestoreEntity, Number
     def __init__(self, coordinator: PolestarCoordinator, description: PolestarNumberDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self.required_fetch = description.fetch_attr
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
 
     async def async_added_to_hass(self) -> None:
@@ -162,6 +165,7 @@ class PolestarTimerTemperatureNumber(OptimisticStateMixin, PolestarEntity, Numbe
     _attr_native_min_value = 15.0
     _attr_native_max_value = 30.0
     _attr_native_step = 0.5
+    required_fetch = "climate_timer_settings"
 
     def __init__(self, coordinator: PolestarCoordinator) -> None:
         super().__init__(coordinator)
