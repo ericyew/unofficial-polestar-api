@@ -11,6 +11,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
+from polestar_api.models.exterior import LockStatus
+
 from .const import DOMAIN
 from .entity import PolestarEntity
 
@@ -26,8 +28,9 @@ async def async_setup_entry(
     """Set up Polestar locks."""
     data = hass.data[DOMAIN][entry.entry_id]
     entities = [
-        PolestarLock(coordinator)
+        lock(coordinator)
         for coordinator in data["coordinators"].values()
+        for lock in (PolestarLock, PolestarTailgateLock)
     ]
     async_add_entities(entities)
 
@@ -122,3 +125,35 @@ class PolestarLock(PolestarEntity, LockEntity):
             self.async_write_ha_state()
             raise
         self.coordinator.async_refresh_exterior_after_command()
+
+
+class PolestarTailgateLock(PolestarLock):
+    """Boot (tailgate) lock.
+
+    The car unlocks the boot with its own trunk-unlock command, and relocks it with the
+    normal lock command (the Polestar app has no separate lock-boot command either), so
+    locking this entity locks the whole car.
+    """
+
+    _attr_name = "Tailgate lock"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self._vehicle.vin}_tailgate_lock"
+
+    @property
+    def is_locked(self) -> bool | None:
+        exterior = self.coordinator.data.exterior if self.coordinator.data else None
+        status = exterior.tailgate.status if exterior is not None and exterior.tailgate is not None else None
+        if status is None or status.lock_status == LockStatus.UNSPECIFIED:
+            return None
+        return status.lock_status == LockStatus.LOCKED
+
+    async def async_unlock(self, **kwargs: Any) -> None:
+        self._start_pending(False)
+        try:
+            await self.coordinator.async_unlock_trunk()
+        except Exception:
+            self._clear_pending()
+            self.async_write_ha_state()
+            raise
