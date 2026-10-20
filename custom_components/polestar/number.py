@@ -142,6 +142,7 @@ class PolestarNumber(OptimisticStateMixin, PolestarEntity, RestoreEntity, Number
         if self.entity_description.key == "climate_target_temperature":
             self.coordinator.climate_preferences.target_temperature = value
             self._set_optimistic(value)
+            await self.coordinator.async_update_running_climate("temperature")
             return
 
         self._set_optimistic(value)

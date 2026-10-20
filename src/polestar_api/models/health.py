@@ -20,6 +20,8 @@ class ServiceWarning(IntEnum):
     ENGINE_HOURS_TIME = 7
     DISTANCE_DRIVEN_TIME = 8
     REGULAR_MAINTENANCE_OVERDUE = 9
+    ENGINE_HOURS_OVERDUE = 10
+    DISTANCE_DRIVEN_OVERDUE = 11
 
 
 class ExteriorLightWarning(IntEnum):
@@ -40,6 +42,7 @@ class BrakeFluidLevelWarning(IntEnum):
     UNSPECIFIED = 0
     NO_WARNING = 1
     TOO_LOW = 2
+    CRITICALLY_LOW = 3
 
 
 class EngineCoolantLevelWarning(IntEnum):

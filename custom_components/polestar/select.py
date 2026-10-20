@@ -14,6 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN
 from .coordinator import PolestarCoordinator
 from .entity import OptimisticStateMixin, PolestarEntity, async_filter_supported_entities
+from .utils import is_polestar_4, normalise_steering_wheel_option
 from polestar_api.models.charging import ChargeTargetLevelSettingType
 from polestar_api.models.climatization import HeatingIntensity
 from polestar_api.models.parking_climate_timer import (
@@ -23,6 +24,14 @@ from polestar_api.models.parking_climate_timer import (
 )
 
 _HEATING_OPTIONS = ["unspecified", "off", "level1", "level2", "level3"]
+_STEERING_WHEEL_OPTIONS = ["unspecified", "off", "level3"]
+_LIVE_UPDATE_ELEMENTS = {
+    "climate_front_left_seat": "front_left_seat",
+    "climate_front_right_seat": "front_right_seat",
+    "climate_rear_left_seat": "rear_left_seat",
+    "climate_rear_right_seat": "rear_right_seat",
+    "climate_steering_wheel": "steering_wheel",
+}
 _HEATING_MAP = {
     "unspecified": HeatingIntensity.UNSPECIFIED,
     "off": HeatingIntensity.OFF,
@@ -160,6 +169,12 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
+        # A Polestar 4's steering wheel heating is on/off; it runs any heated level as level3.
+        self._steering_on_off = description.key == "climate_steering_wheel" and is_polestar_4(
+            self._vehicle.model_name, self._vehicle.vin
+        )
+        if self._steering_on_off:
+            self._attr_options = _STEERING_WHEEL_OPTIONS
 
     async def async_added_to_hass(self) -> None:
         """Restore helper state."""
@@ -171,8 +186,11 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
         last_state = await self.async_get_last_state()
         if last_state is None or last_state.state in {"unknown", "unavailable"}:
             return
-        if last_state.state in self.options:
-            await self.async_select_option(last_state.state)
+        restored = last_state.state
+        if self._steering_on_off:
+            restored = normalise_steering_wheel_option(restored)
+        if restored in self.options:
+            self._store_heating(restored)
 
     @property
     def current_option(self) -> str | None:
@@ -191,7 +209,8 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
             return prefs.rear_left_seat.name.lower()
         if key == "climate_rear_right_seat":
             return prefs.rear_right_seat.name.lower()
-        return prefs.steering_wheel.name.lower()
+        name = prefs.steering_wheel.name.lower()
+        return normalise_steering_wheel_option(name) if self._steering_on_off else name
 
     async def async_select_option(self, option: str) -> None:
         key = self.entity_description.key
@@ -205,6 +224,12 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
                 raise
             return
 
+        self._store_heating(option)
+        if key in _LIVE_UPDATE_ELEMENTS:
+            await self.coordinator.async_update_running_climate(_LIVE_UPDATE_ELEMENTS[key])
+
+    def _store_heating(self, option: str) -> None:
+        key = self.entity_description.key
         heating = _HEATING_MAP[option]
         prefs = self.coordinator.climate_preferences
         if key == "climate_front_left_seat":

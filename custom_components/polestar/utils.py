@@ -116,3 +116,19 @@ def serialize_charge_location(location: ChargeLocation) -> dict[str, Any]:
             for departure in location.departure_times
         ],
     }
+
+
+def is_polestar_4(model_name: str | None, vin: str) -> bool:
+    """Return True for a Polestar 4.
+
+    Falls back to the VIN prefix because the model name is missing when vehicle
+    discovery is rejected and the integration only knows the configured VIN.
+    """
+    if model_name:
+        return model_name.casefold().replace("polestar", "").strip() == "4"
+    return vin.upper().startswith("YSM4")
+
+
+def normalise_steering_wheel_option(option: str) -> str:
+    """Steering wheel heating is on/off on a Polestar 4: the car runs any heated level as level3."""
+    return "level3" if option in ("level1", "level2") else option

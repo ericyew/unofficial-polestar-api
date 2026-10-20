@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import time as dt_time, timedelta
@@ -63,6 +64,9 @@ _COMMAND_INVOCATION_SUCCESS = {
     InvocationStatus.DELIVERED,
     InvocationStatus.SUCCESS,
 }
+# The climate status the car reports lags a start command by tens of seconds.
+_CLIMATE_START_LAG = 60.0
+
 # Attributes whose entities are disabled when the first poll succeeds but returns no data at all.
 _DISABLE_WHEN_EMPTY = ("precleaning",)
 
@@ -173,6 +177,8 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._unsupported_fetches: set[str] = set()
         self._empty_fetches: set[str] = set()
         self._no_data_fetches: set[str] = set()
+        self._climate_started_at: float | None = None
+        self._last_started_values: dict[str, Any] = {}
         self._command_failure_listeners: list[Callable[[], None]] = []
         add_listener = getattr(vehicle, "add_invocation_listener", None)
         self._remove_invocation_listener = add_listener(self._handle_invocation_result) if add_listener else None
@@ -545,24 +551,74 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
     ) -> Any:
         """Start climate using command preferences unless explicit values are provided."""
         prefs = self.climate_preferences
-        response = await self.vehicle.start_climate(
-            temperature=prefs.target_temperature if temperature is None else temperature,
-            front_left_seat=prefs.front_left_seat if front_left_seat is None else front_left_seat,
-            front_right_seat=prefs.front_right_seat if front_right_seat is None else front_right_seat,
-            rear_left_seat=prefs.rear_left_seat if rear_left_seat is None else rear_left_seat,
-            rear_right_seat=prefs.rear_right_seat if rear_right_seat is None else rear_right_seat,
-            steering_wheel=prefs.steering_wheel if steering_wheel is None else steering_wheel,
-        )
+        values = {
+            "temperature": prefs.target_temperature if temperature is None else temperature,
+            "front_left_seat": prefs.front_left_seat if front_left_seat is None else front_left_seat,
+            "front_right_seat": prefs.front_right_seat if front_right_seat is None else front_right_seat,
+            "rear_left_seat": prefs.rear_left_seat if rear_left_seat is None else rear_left_seat,
+            "rear_right_seat": prefs.rear_right_seat if rear_right_seat is None else rear_right_seat,
+            "steering_wheel": prefs.steering_wheel if steering_wheel is None else steering_wheel,
+        }
+        response = await self.vehicle.start_climate(**values)
         if not self._command_succeeded(response):
             raise HomeAssistantError(self._command_error_message(response, "Start climate command failed"))
+        self._climate_started_at = time.monotonic()
+        self._last_started_values = values
         self._schedule_background_refresh("climate")
         return response
+
+    @property
+    def is_climate_running(self) -> bool:
+        """True while the climate is running, or a start was just sent and the car has not reported it yet."""
+        climate = self.data.climate if self.data else None
+        if climate is not None and climate.is_active:
+            return True
+        return self._climate_started_at is not None and time.monotonic() - self._climate_started_at < _CLIMATE_START_LAG
+
+    async def async_update_running_climate(self, changed: str) -> None:
+        """Apply a changed seat, steering wheel or temperature setting to a running climate.
+
+        Like the Polestar app, this re-sends the start command, which also restarts the
+        car's 30 minute timer. Only the setting named by *changed* takes its value from
+        the stored preferences; everything else keeps what the car reports (or, just
+        after a start the car has not reported yet, what that start sent), so settings
+        made in the app are not undone. Does nothing when the climate is not running.
+        """
+        if not self.is_climate_running:
+            return
+        prefs = self.climate_preferences
+        values: dict[str, Any] = {
+            "temperature": prefs.target_temperature,
+            "front_left_seat": prefs.front_left_seat,
+            "front_right_seat": prefs.front_right_seat,
+            "rear_left_seat": prefs.rear_left_seat,
+            "rear_right_seat": prefs.rear_right_seat,
+            "steering_wheel": prefs.steering_wheel,
+        }
+        climate = self.data.climate if self.data else None
+        if climate is not None and climate.is_active:
+            current = {
+                "temperature": climate.target_temperature_celsius,
+                "front_left_seat": climate.front_left_seat,
+                "front_right_seat": climate.front_right_seat,
+                "rear_left_seat": climate.rear_left_seat,
+                "rear_right_seat": climate.rear_right_seat,
+                "steering_wheel": climate.steering_wheel,
+            }
+            current = {key: value for key, value in current.items() if value is not None}
+        else:
+            current = dict(self._last_started_values)
+        for key, value in current.items():
+            if key != changed:
+                values[key] = value
+        await self.async_start_climate(**values)
 
     async def async_stop_climate(self) -> Any:
         """Stop climate and refresh state."""
         response = await self.vehicle.stop_climate()
         if not self._command_succeeded(response):
             raise HomeAssistantError(self._command_error_message(response, "Stop climate command failed"))
+        self._climate_started_at = None
         self._schedule_background_refresh("climate")
         return response
 

@@ -355,3 +355,26 @@ async def test_precleaning_fetch_failure_does_not_disable_entities(monkeypatch):
     coordinator._record_no_data_fetches()
 
     assert coordinator.is_fetch_supported("precleaning")
+
+
+def test_polestar_4_detection(monkeypatch):
+    _load(monkeypatch, FakeRegistry())
+    utils = sys.modules["_polestar_unsupported_under_test.utils"]
+
+    assert utils.is_polestar_4("Polestar 4", "ANYVIN")
+    assert utils.is_polestar_4("4", "ANYVIN")
+    assert utils.is_polestar_4(None, "YSM4ZPBA1SF419419")
+    assert not utils.is_polestar_4("Polestar 2", "YSM4ZPBA1SF419419")
+    assert not utils.is_polestar_4(None, "YSMFD3KA0RL000001")
+    assert not utils.is_polestar_4("", "LPSVSEDB4NL000001")
+
+
+def test_steering_wheel_heating_is_on_off(monkeypatch):
+    _load(monkeypatch, FakeRegistry())
+    utils = sys.modules["_polestar_unsupported_under_test.utils"]
+
+    assert utils.normalise_steering_wheel_option("level1") == "level3"
+    assert utils.normalise_steering_wheel_option("level2") == "level3"
+    assert utils.normalise_steering_wheel_option("level3") == "level3"
+    assert utils.normalise_steering_wheel_option("off") == "off"
+    assert utils.normalise_steering_wheel_option("unspecified") == "unspecified"

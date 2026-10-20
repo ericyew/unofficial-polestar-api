@@ -66,6 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         vehicle = Vehicle(vin=configured_vin, connection=api._connection)
 
+    await vehicle.async_load_car_information()
+
     coordinator = PolestarCoordinator(hass, vehicle, entry)
     await coordinator.async_config_entry_first_refresh()
     await coordinator.async_start_streams()
