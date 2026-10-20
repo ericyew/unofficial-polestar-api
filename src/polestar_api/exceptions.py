@@ -21,15 +21,22 @@ class ApiError(PolestarError):
         self.status_code = status_code
 
 
+_UNSUPPORTED_MESSAGES = ("Functionality not supported", "Method not found")
+
+
 def is_unsupported_feature_error(err: BaseException) -> bool:
-    """Return True if *err* is Polestar's "Functionality not supported" gRPC answer."""
+    """Return True if *err* means the car or backend does not offer this call.
+
+    Polestar answers UNIMPLEMENTED with "Functionality not supported" for features
+    a model lacks, and "Method not found" for endpoints it has removed.
+    """
     from grpclib.const import Status
     from grpclib.exceptions import GRPCError
 
     return (
         isinstance(err, GRPCError)
         and err.status == Status.UNIMPLEMENTED
-        and "Functionality not supported" in (err.message or "")
+        and any(message in (err.message or "") for message in _UNSUPPORTED_MESSAGES)
     )
 
 

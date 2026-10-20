@@ -20,7 +20,7 @@ from polestar_api.models.health import LowVoltageBatteryWarning, ServiceWarning
 
 from .const import DOMAIN
 from .coordinator import PolestarVehicleData
-from .entity import PolestarEntity
+from .entity import PolestarEntity, async_filter_supported_entities
 
 
 def _safe(fn: Callable[[PolestarVehicleData], Any], data: PolestarVehicleData) -> bool | None:
@@ -41,6 +41,7 @@ class PolestarBinarySensorDescription(BinarySensorEntityDescription):
     """Binary sensor description with value extractor."""
 
     value_fn: Callable[[PolestarVehicleData], bool | None]
+    fetch_attr: str | None = None
 
 
 BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
@@ -142,6 +143,7 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
     ),
     PolestarBinarySensorDescription(
         key="connected",
+        fetch_attr="connectivity",
         name="Connected",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         value_fn=lambda d: d.connectivity.is_connected if d.connectivity else None,
@@ -192,6 +194,7 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
     ),
     PolestarBinarySensorDescription(
         key="precleaning_running",
+        fetch_attr="precleaning",
         name="Pre-cleaning running",
         device_class=BinarySensorDeviceClass.RUNNING,
         value_fn=lambda d: d.precleaning.is_running if d.precleaning else None,
@@ -206,11 +209,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up Polestar binary sensors."""
     data = hass.data[DOMAIN][entry.entry_id]
-    entities = []
     for coordinator in data["coordinators"].values():
-        for desc in BINARY_SENSORS:
-            entities.append(PolestarBinarySensor(coordinator, desc))
-    async_add_entities(entities)
+        entities = [PolestarBinarySensor(coordinator, desc) for desc in BINARY_SENSORS]
+        async_add_entities(async_filter_supported_entities(hass, coordinator, "binary_sensor", entities))
 
 
 class PolestarBinarySensor(PolestarEntity, BinarySensorEntity):
@@ -221,6 +222,7 @@ class PolestarBinarySensor(PolestarEntity, BinarySensorEntity):
     def __init__(self, coordinator, description: PolestarBinarySensorDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self.required_fetch = description.fetch_attr
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
 
     @property

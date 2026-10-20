@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import PolestarCoordinator, PolestarVehicleData
-from .entity import OptimisticStateMixin, PolestarEntity
+from .entity import OptimisticStateMixin, PolestarEntity, async_filter_supported_entities
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -25,6 +25,7 @@ class PolestarSwitchDescription(SwitchEntityDescription):
     turn_on_fn: Callable[[PolestarCoordinator], Awaitable[Any]]
     turn_off_fn: Callable[[PolestarCoordinator], Awaitable[Any]]
     capability: str | None = None
+    fetch_attr: str | None = None
 
 
 SWITCHES: tuple[PolestarSwitchDescription, ...] = (
@@ -39,6 +40,7 @@ SWITCHES: tuple[PolestarSwitchDescription, ...] = (
     ),
     PolestarSwitchDescription(
         key="precleaning",
+        fetch_attr="precleaning",
         name="Pre-cleaning",
         icon="mdi:air-purifier",
         is_on_fn=lambda d: d.precleaning.is_running if d.precleaning else None,
@@ -75,11 +77,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up Polestar switches."""
     data = hass.data[DOMAIN][entry.entry_id]
-    entities = []
     for coordinator in data["coordinators"].values():
-        for desc in SWITCHES:
-            entities.append(PolestarSwitch(coordinator, desc))
-    async_add_entities(entities)
+        entities = [PolestarSwitch(coordinator, desc) for desc in SWITCHES]
+        async_add_entities(async_filter_supported_entities(hass, coordinator, "switch", entities))
 
 
 class PolestarSwitch(OptimisticStateMixin, PolestarEntity, SwitchEntity):
@@ -90,6 +90,7 @@ class PolestarSwitch(OptimisticStateMixin, PolestarEntity, SwitchEntity):
     def __init__(self, coordinator, description: PolestarSwitchDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self.required_fetch = description.fetch_attr
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
 
     @property

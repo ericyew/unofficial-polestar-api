@@ -63,6 +63,9 @@ _COMMAND_INVOCATION_SUCCESS = {
     InvocationStatus.DELIVERED,
     InvocationStatus.SUCCESS,
 }
+# Attributes whose entities are disabled when the first poll succeeds but returns no data at all.
+_DISABLE_WHEN_EMPTY = ("precleaning",)
+
 # Coordinator attributes to re-read once a command finishes, keyed by invocation method.
 _INVOCATION_REFRESH_ATTRS: dict[str, tuple[str, ...]] = {
     "Lock": ("exterior",),
@@ -168,6 +171,8 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._unsupported_streams: set[str] = set()
         self._unsupported_commands: set[str] = set()
         self._unsupported_fetches: set[str] = set()
+        self._empty_fetches: set[str] = set()
+        self._no_data_fetches: set[str] = set()
         self._command_failure_listeners: list[Callable[[], None]] = []
         add_listener = getattr(vehicle, "add_invocation_listener", None)
         self._remove_invocation_listener = add_listener(self._handle_invocation_result) if add_listener else None
@@ -273,7 +278,11 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
 
     def is_fetch_supported(self, attr: str) -> bool:
         """Return whether the car supports the data behind a coordinator attribute."""
-        return attr not in self._unsupported_fetches
+        return attr not in self._unsupported_fetches and attr not in self._no_data_fetches
+
+    def _record_no_data_fetches(self) -> None:
+        """After the first poll, remember attributes the car answered with no data at all."""
+        self._no_data_fetches = {attr for attr in _DISABLE_WHEN_EMPTY if attr in self._empty_fetches}
 
     def is_command_supported(self, capability: str) -> bool:
         """Return whether a command capability is supported by the car."""
@@ -339,6 +348,10 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
                 values[attr] = getattr(previous, attr)
                 continue
 
+            if result is None:
+                self._empty_fetches.add(attr)
+            else:
+                self._empty_fetches.discard(attr)
             result = self._merge_partial_update(attr, getattr(previous, attr), result)
             values[attr] = getattr(previous, attr) if result is None else result
             successful_fetches += 1
@@ -354,6 +367,8 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
                 return self.data
             raise UpdateFailed("All API calls failed")
 
+        if self.data is None:
+            self._record_no_data_fetches()
         data = PolestarVehicleData(**values)
         self._update_installed_version_cache(data.software)
         self._unsupported_commands.clear()

@@ -142,9 +142,10 @@ def _unsupported(feature: str) -> GRPCError:
 
 def test_classifies_unsupported_feature_error():
     assert is_unsupported_feature_error(_unsupported("AMP_LIMIT"))
-    assert not is_unsupported_feature_error(
+    assert is_unsupported_feature_error(
         GRPCError(Status.UNIMPLEMENTED, "Method not found: services.vehiclestates.dashboard.DashboardService/GetLatestDashboard")
     )
+    assert not is_unsupported_feature_error(GRPCError(Status.UNIMPLEMENTED, "Something else"))
     assert not is_unsupported_feature_error(GRPCError(Status.INVALID_ARGUMENT, "Validation failed"))
     assert not is_unsupported_feature_error(TimeoutError())
 
@@ -177,6 +178,8 @@ def _coordinator(module, vehicle):
     coordinator = module.PolestarCoordinator.__new__(module.PolestarCoordinator)
     coordinator.vehicle = vehicle
     coordinator._unsupported_fetches = set()
+    coordinator._empty_fetches = set()
+    coordinator._no_data_fetches = set()
     coordinator._merge_partial_update = lambda attr, previous, result: result
     return coordinator
 
@@ -291,3 +294,64 @@ def test_charge_location_data_is_unknown_until_fetched(monkeypatch):
     assert data.charge_locations is None
     assert data.current_charge_location is None
     assert coordinator.current_charge_location_details is None
+
+
+class EmptyPrecleaningVehicle(FakeVehicle):
+    def __init__(self, errors: dict[str, Exception], precleaning) -> None:
+        super().__init__(errors)
+        self._precleaning = precleaning
+
+    async def get_precleaning(self):
+        self.calls.append("precleaning")
+        if isinstance(self._precleaning, Exception):
+            raise self._precleaning
+        return self._precleaning
+
+
+@pytest.mark.asyncio
+async def test_connectivity_endpoint_removed_is_unsupported(monkeypatch):
+    coordinator_module, _ = _load(monkeypatch, FakeRegistry())
+
+    class Vehicle(FakeVehicle):
+        async def get_connectivity(self):
+            raise GRPCError(Status.UNIMPLEMENTED, "Method not found: DashboardService/GetLatestDashboard")
+
+    coordinator = _coordinator(coordinator_module, Vehicle({}))
+
+    await coordinator._async_fetch_values(("connectivity", "battery"), coordinator_module.PolestarVehicleData())
+
+    assert not coordinator.is_fetch_supported("connectivity")
+
+
+@pytest.mark.asyncio
+async def test_precleaning_with_no_data_on_first_poll_is_disabled(monkeypatch):
+    coordinator_module, _ = _load(monkeypatch, FakeRegistry())
+    coordinator = _coordinator(coordinator_module, EmptyPrecleaningVehicle({}, None))
+
+    await coordinator._async_fetch_values(("precleaning", "battery"), coordinator_module.PolestarVehicleData())
+    coordinator._record_no_data_fetches()
+
+    assert not coordinator.is_fetch_supported("precleaning")
+    assert coordinator.is_fetch_supported("battery")
+
+
+@pytest.mark.asyncio
+async def test_precleaning_with_data_stays_enabled(monkeypatch):
+    coordinator_module, _ = _load(monkeypatch, FakeRegistry())
+    coordinator = _coordinator(coordinator_module, EmptyPrecleaningVehicle({}, "pre-cleaning data"))
+
+    await coordinator._async_fetch_values(("precleaning",), coordinator_module.PolestarVehicleData())
+    coordinator._record_no_data_fetches()
+
+    assert coordinator.is_fetch_supported("precleaning")
+
+
+@pytest.mark.asyncio
+async def test_precleaning_fetch_failure_does_not_disable_entities(monkeypatch):
+    coordinator_module, _ = _load(monkeypatch, FakeRegistry())
+    coordinator = _coordinator(coordinator_module, EmptyPrecleaningVehicle({}, TimeoutError()))
+
+    await coordinator._async_fetch_values(("precleaning",), coordinator_module.PolestarVehicleData())
+    coordinator._record_no_data_fetches()
+
+    assert coordinator.is_fetch_supported("precleaning")
