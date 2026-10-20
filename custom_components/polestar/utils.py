@@ -157,3 +157,10 @@ def climate_minutes_remaining(climate, now: float) -> int | None:
 def climate_timer_label(slot: int, max_timers: int | None, prefix: str) -> str:
     """Name of a climate timer slot, without a number when the car has only one timer."""
     return prefix if max_timers == 1 else f"{prefix} {slot + 1}"
+
+
+def state_icon(is_on: bool | None, icon_on: str | None, icon_off: str | None, default: str | None) -> str | None:
+    """Icon that follows a binary state; an unknown state shows the "off" icon."""
+    if icon_on is None and icon_off is None:
+        return default
+    return icon_on if is_on else icon_off
