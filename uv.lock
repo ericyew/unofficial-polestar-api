@@ -782,7 +782,7 @@ wheels = [
 
 [[package]]
 name = "unofficial-polestar-api"
-version = "0.3.11"
+version = "0.3.12"
 source = { editable = "." }
 dependencies = [
     { name = "grpclib" },
