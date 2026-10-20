@@ -23,11 +23,15 @@ CAR_SCHEMA = {
 MY_CAR_SCHEMA = {"linked": (2, "bool"), "owner": (3, "bool"), "plate": (4, "string")}
 
 
-def _my_car(vin: str, name: str, *, plate: str | None = None, year: str = "2025") -> bytes:
+def _my_car(
+    vin: str, name: str, *, plate: str | None = None, year: str = "2025", charging: bytes | None = None
+) -> bytes:
     car = encode(
         CAR_SCHEMA,
         {"vin": vin, "code": "814", "name": name, "year": year, "software": "4.2.11", "market": "AU"},
     )
+    if charging is not None:
+        car += encode_message(35, charging)
     values = {"linked": True, "owner": True}
     if plate is not None:
         values["plate"] = plate
@@ -164,3 +168,35 @@ async def test_failure_leaves_the_vehicle_unchanged(monkeypatch):
     assert vehicle.model_name is None
     assert vehicle.model_year is None
     assert vehicle.registration_no is None
+
+
+# What the car reports under "charging": a global charge timer (field 11) but no per-location limit (field 16).
+GLOBAL_TIMER_ONLY = encode({"global_timer": (11, "bool"), "type": (10, "int32")}, {"global_timer": True, "type": 2})
+WITH_LOCATIONS = encode({"max_locations": (16, "int32")}, {"max_locations": 5})
+
+
+@pytest.mark.asyncio
+async def test_car_without_a_location_limit_has_no_charge_locations(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car("VIN0000000000001", "Polestar 4", charging=GLOBAL_TIMER_ONLY)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_charge_locations is False
+
+
+@pytest.mark.asyncio
+async def test_car_with_a_location_limit_supports_charge_locations(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car("VIN0000000000001", "Polestar 2", charging=WITH_LOCATIONS)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_charge_locations is True
+
+
+@pytest.mark.asyncio
+async def test_unknown_when_the_car_reports_no_charging_block(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car("VIN0000000000001", "Polestar 4")))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_charge_locations is None

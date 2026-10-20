@@ -175,6 +175,9 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._unsupported_streams: set[str] = set()
         self._unsupported_commands: set[str] = set()
         self._unsupported_fetches: set[str] = set()
+        if getattr(vehicle, "supports_charge_locations", None) is False:
+            _LOGGER.info("Vehicle %s reports no charge locations; they will not be polled", vehicle.vin)
+            self._unsupported_fetches.update(("charge_locations", "current_charge_location"))
         self._empty_fetches: set[str] = set()
         self._no_data_fetches: set[str] = set()
         self._climate_started_at: float | None = None

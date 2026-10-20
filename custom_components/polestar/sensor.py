@@ -544,6 +544,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="charge_locations",
+        fetch_attr="charge_locations",
         name="Charge locations",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -552,6 +553,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="current_charge_location",
+        fetch_attr="current_charge_location",
         name="Current charge location",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_current_charge_location_state,

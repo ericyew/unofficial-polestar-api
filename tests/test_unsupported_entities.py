@@ -378,3 +378,26 @@ def test_steering_wheel_heating_is_on_off(monkeypatch):
     assert utils.normalise_steering_wheel_option("level3") == "level3"
     assert utils.normalise_steering_wheel_option("off") == "off"
     assert utils.normalise_steering_wheel_option("unspecified") == "unspecified"
+
+
+def _new_coordinator(module, supports_charge_locations):
+    vehicle = FakeVehicle({})
+    vehicle.supports_charge_locations = supports_charge_locations
+    return module.PolestarCoordinator(None, vehicle, SimpleNamespace(options={}))
+
+
+def test_car_without_charge_locations_is_not_polled_for_them(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+
+    coordinator = _new_coordinator(module, False)
+
+    assert not coordinator.is_fetch_supported("charge_locations")
+    assert not coordinator.is_fetch_supported("current_charge_location")
+    assert coordinator.is_fetch_supported("battery")
+
+
+def test_charge_locations_stay_enabled_when_supported_or_unknown(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+
+    assert _new_coordinator(module, True).is_fetch_supported("charge_locations")
+    assert _new_coordinator(module, None).is_fetch_supported("charge_locations")

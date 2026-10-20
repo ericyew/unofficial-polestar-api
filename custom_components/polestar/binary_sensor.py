@@ -156,6 +156,7 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
     ),
     PolestarBinarySensorDescription(
         key="at_charge_location",
+        fetch_attr="current_charge_location",
         name="At charge location",
         icon="mdi:map-marker-radius",
         value_fn=lambda d: (

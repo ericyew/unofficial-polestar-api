@@ -77,6 +77,7 @@ class Vehicle:
         self.registration_no = registration_no
         self.model_year = model_year
         self.model_name = model_name
+        self.supports_charge_locations: bool | None = None
 
         self._amp_limit = AmpLimitServiceClient(connection, vin)
         self._availability = AvailabilityServiceClient(connection, vin)
@@ -115,6 +116,8 @@ class Vehicle:
         if my_car is None:
             return
         car = my_car.car
+        if car is not None and car.charging is not None:
+            self.supports_charge_locations = car.charging.max_number_of_locations > 0
         if car is not None:
             self.model_name = self.model_name or car.vehicle_type_name or None
             if self.model_year is None and car.model_year.isdigit():
