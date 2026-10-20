@@ -200,6 +200,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="charging_status",
+        icon="mdi:power-plug-battery",
         name="Charging status",
         device_class=SensorDeviceClass.ENUM,
         options=enum_options(ChargingStatus),
@@ -207,6 +208,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="charger_connection",
+        icon="mdi:ev-plug-type2",
         name="Charger connection",
         device_class=SensorDeviceClass.ENUM,
         options=enum_options(ChargerConnectionStatus),
@@ -364,6 +366,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="low_voltage_battery_warning",
+        icon="mdi:car-battery",
         name="Low-voltage battery warning",
         device_class=SensorDeviceClass.ENUM,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -380,6 +383,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="fl_tyre_pressure",
+        icon="mdi:tire",
         name="Front left tyre pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -388,6 +392,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="fr_tyre_pressure",
+        icon="mdi:tire",
         name="Front right tyre pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -396,6 +401,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="rl_tyre_pressure",
+        icon="mdi:tire",
         name="Rear left tyre pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -404,6 +410,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="rr_tyre_pressure",
+        icon="mdi:tire",
         name="Rear right tyre pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -470,6 +477,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="climate_running_status",
+        icon="mdi:air-conditioner",
         name="Climate running status",
         device_class=SensorDeviceClass.ENUM,
         options=enum_options(ClimatizationRunningStatus, exclude_unspecified=False),
