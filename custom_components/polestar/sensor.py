@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 
 from polestar_api.models.availability import UnavailableReason, UsageMode
 from polestar_api.models.battery import (
@@ -55,7 +56,13 @@ from polestar_api.models.precleaning import PreCleaningErrorType, PreCleaningSta
 from .const import DOMAIN
 from .coordinator import PolestarVehicleData
 from .entity import PolestarEntity, async_filter_supported_entities
-from .utils import enum_name, enum_options, serialize_charge_location
+from .utils import (
+    climate_end_time,
+    climate_minutes_remaining,
+    enum_name,
+    enum_options,
+    serialize_charge_location,
+)
 
 
 def _safe(fn: Callable[[PolestarVehicleData], Any], data: PolestarVehicleData) -> Any:
@@ -71,6 +78,15 @@ def _heating_intensity_name(value: HeatingIntensity | None) -> str | None:
     if value in (HeatingIntensity.UNSPECIFIED, HeatingIntensity.OFF):
         return "off"
     return value.name.lower()
+
+
+def _location_reports_motion(data: PolestarVehicleData) -> bool:
+    location = data.location
+    return location is None or any((location.heading, location.speed, location.altitude))
+
+
+def _timestamp_or_none(seconds: float | None):
+    return dt_util.utc_from_timestamp(seconds) if seconds is not None else None
 
 
 def _current_charge_location_state(data: PolestarVehicleData) -> str | None:
@@ -214,6 +230,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="avg_consumption",
+        fetch_attr="avg_consumption",
         name="Average consumption",
         device_class=SensorDeviceClass.ENERGY_DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -223,6 +240,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="avg_consumption_auto",
+        fetch_attr="avg_consumption_auto",
         name="Average consumption (auto)",
         device_class=SensorDeviceClass.ENERGY_DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -233,6 +251,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="avg_consumption_since_charge",
+        fetch_attr="avg_consumption_since_charge",
         name="Average consumption since charge",
         device_class=SensorDeviceClass.ENERGY_DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -267,6 +286,8 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="heading",
+        # The C3 location service sends only a position, so these stay 0 on it.
+        required_data=_location_reports_motion,
         name="Heading",
         native_unit_of_measurement="°",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -274,6 +295,8 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="speed",
+        # The C3 location service sends only a position, so these stay 0 on it.
+        required_data=_location_reports_motion,
         name="Speed",
         device_class=SensorDeviceClass.SPEED,
         native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
@@ -282,6 +305,8 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="altitude",
+        # The C3 location service sends only a position, so these stay 0 on it.
+        required_data=_location_reports_motion,
         name="Altitude",
         device_class=SensorDeviceClass.DISTANCE,
         native_unit_of_measurement=UnitOfLength.METERS,
@@ -472,7 +497,14 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.MINUTES,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: d.climate.time_remaining if d.climate else None,
+        value_fn=lambda d: climate_minutes_remaining(d.climate, dt_util.utcnow().timestamp()),
+    ),
+    PolestarSensorDescription(
+        key="climate_ends_at",
+        name="Climate ends at",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _timestamp_or_none(climate_end_time(d.climate)),
     ),
     PolestarSensorDescription(
         key="climate_current_temperature",
@@ -508,6 +540,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="climate_rear_left_seat",
+        fetch_attr="rear_seat_heating",
         name="Climate rear left seat",
         device_class=SensorDeviceClass.ENUM,
         options=["off", "level1", "level2", "level3"],
@@ -516,6 +549,7 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="climate_rear_right_seat",
+        fetch_attr="rear_seat_heating",
         name="Climate rear right seat",
         device_class=SensorDeviceClass.ENUM,
         options=["off", "level1", "level2", "level3"],

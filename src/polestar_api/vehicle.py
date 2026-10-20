@@ -80,6 +80,12 @@ class Vehicle:
         self.supports_charge_locations: bool | None = None
         self.supports_window_control: bool | None = None
         self.supports_sunroof_control: bool | None = None
+        self.supports_target_soc_presets: bool | None = None
+        self.reports_avg_consumption: bool | None = None
+        self.reports_avg_consumption_auto: bool | None = None
+        self.reports_avg_consumption_since_charge: bool | None = None
+        self.supports_rear_seat_heating: bool | None = None
+        self.max_climate_timers: int | None = None
 
         self._amp_limit = AmpLimitServiceClient(connection, vin)
         self._availability = AvailabilityServiceClient(connection, vin)
@@ -120,6 +126,17 @@ class Vehicle:
         car = my_car.car
         if car is not None and car.charging is not None:
             self.supports_charge_locations = car.charging.max_number_of_locations > 0
+        if car is not None:
+            self.reports_avg_consumption = bool(car.reports_avg_electric_consumption)
+            self.reports_avg_consumption_auto = bool(car.reports_avg_electric_consumption_last_trip)
+            self.reports_avg_consumption_since_charge = bool(car.reports_avg_electric_consumption_last_charge)
+        if car is not None and car.charging is not None and car.charging.target_charge_level_settings is not None:
+            presets = car.charging.target_charge_level_settings.supports_target_charge_level_presets
+            self.supports_target_soc_presets = bool(presets)
+        if car is not None and car.parking_climatization is not None:
+            self.supports_rear_seat_heating = bool(car.parking_climatization.supports_rear_seats_settings)
+            timers = car.parking_climatization.timers
+            self.max_climate_timers = timers.max_number if timers is not None else 0
         if car is not None and car.locks is not None:
             self.supports_window_control = bool(car.locks.supports_window_control)
             self.supports_sunroof_control = bool(car.locks.supports_sunroof_control)

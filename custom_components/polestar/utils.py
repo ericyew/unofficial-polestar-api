@@ -132,3 +132,28 @@ def is_polestar_4(model_name: str | None, vin: str) -> bool:
 def normalise_steering_wheel_option(option: str) -> str:
     """Steering wheel heating is on/off on a Polestar 4: the car runs any heated level as level3."""
     return "level3" if option in ("level1", "level2") else option
+
+
+def climate_end_time(climate) -> float | None:
+    """When the running climate ends (seconds since the epoch), or ``None`` if it is not running."""
+    if climate is None or not climate.is_active or not climate.ending_at:
+        return None
+    return float(climate.ending_at)
+
+
+def climate_minutes_remaining(climate, now: float) -> int | None:
+    """Minutes left of a running climate, counted from its end time when the car reports one.
+
+    The car's own "runtime left" stays at the full duration while the climate runs.
+    """
+    if climate is None:
+        return None
+    end = climate_end_time(climate)
+    if end is not None:
+        return max(0, -int((now - end) // 60))
+    return climate.time_remaining
+
+
+def climate_timer_label(slot: int, max_timers: int | None, prefix: str) -> str:
+    """Name of a climate timer slot, without a number when the car has only one timer."""
+    return prefix if max_timers == 1 else f"{prefix} {slot + 1}"

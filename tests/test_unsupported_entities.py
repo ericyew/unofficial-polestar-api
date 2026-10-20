@@ -475,3 +475,43 @@ def test_window_and_sunroof_stay_enabled_when_supported_or_unknown(monkeypatch):
 
     assert module.PolestarCoordinator(None, supported, SimpleNamespace(options={})).is_fetch_supported("window_control")
     assert module.PolestarCoordinator(None, FakeVehicle({}), SimpleNamespace(options={})).is_fetch_supported("sunroof")
+
+
+def _coordinator_for(module, **flags):
+    vehicle = FakeVehicle({})
+    for name, value in flags.items():
+        setattr(vehicle, name, value)
+    return module.PolestarCoordinator(None, vehicle, SimpleNamespace(options={}))
+
+
+def test_each_capability_the_car_lacks_disables_what_depends_on_it(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+
+    coordinator = _coordinator_for(
+        module,
+        supports_target_soc_presets=False,
+        reports_avg_consumption=False,
+        reports_avg_consumption_auto=True,
+        reports_avg_consumption_since_charge=False,
+        supports_rear_seat_heating=False,
+    )
+
+    for name in ("target_soc_presets", "avg_consumption", "avg_consumption_since_charge", "rear_seat_heating"):
+        assert not coordinator.is_fetch_supported(name)
+    assert coordinator.is_fetch_supported("avg_consumption_auto")
+
+
+def test_climate_timer_slots_beyond_what_the_car_supports_are_disabled(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+
+    one = _coordinator_for(module, max_climate_timers=1)
+    none = _coordinator_for(module, max_climate_timers=0)
+    all_three = _coordinator_for(module, max_climate_timers=3)
+    unknown = _coordinator_for(module)
+
+    assert one.is_fetch_supported("climate_timer_slot_1")
+    assert not one.is_fetch_supported("climate_timer_slot_2")
+    assert not one.is_fetch_supported("climate_timer_slot_3")
+    assert not none.is_fetch_supported("climate_timer_slot_1")
+    assert all(all_three.is_fetch_supported(f"climate_timer_slot_{n}") for n in (1, 2, 3))
+    assert all(unknown.is_fetch_supported(f"climate_timer_slot_{n}") for n in (1, 2, 3))

@@ -240,3 +240,71 @@ async def test_window_and_sunroof_support_is_unknown_without_a_locks_block(monke
 
     assert vehicle.supports_window_control is None
     assert vehicle.supports_sunroof_control is None
+
+
+# What a Polestar 4 reports: consumption since the last trip but not overall or since charge, no target
+# charge level presets, one parking climate timer and no rear seat settings.
+CHARGING_NO_PRESETS = encode_message(8, encode({"settings": (1, "bool"), "min": (2, "int32")}, {"settings": True, "min": 50}))
+CLIMATE_ONE_TIMER = encode({"front": (8, "bool")}, {"front": True}) + encode_message(
+    13, encode({"repeated": (2, "bool"), "max": (7, "int32")}, {"repeated": True, "max": 1})
+)
+LAST_TRIP_ONLY = encode({"last_trip": (48, "bool")}, {"last_trip": True})
+
+
+def _capable_car(*, flat: bytes = b"", charging: bytes | None = None, climate: bytes | None = None) -> bytes:
+    car = encode(CAR_SCHEMA, {"vin": "VIN0000000000001", "name": "Polestar 4"}) + flat
+    if charging is not None:
+        car += encode_message(35, charging)
+    if climate is not None:
+        car += encode_message(37, climate)
+    return encode_message(1, car) + encode(MY_CAR_SCHEMA, {"owner": True})
+
+
+@pytest.mark.asyncio
+async def test_capabilities_of_a_polestar_4_are_read(monkeypatch):
+    response = _response(_capable_car(flat=LAST_TRIP_ONLY, charging=CHARGING_NO_PRESETS, climate=CLIMATE_ONE_TIMER))
+    vehicle = _vehicle(monkeypatch, response)
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.reports_avg_consumption is False
+    assert vehicle.reports_avg_consumption_auto is True
+    assert vehicle.reports_avg_consumption_since_charge is False
+    assert vehicle.supports_target_soc_presets is False
+    assert vehicle.supports_rear_seat_heating is False
+    assert vehicle.max_climate_timers == 1
+
+
+@pytest.mark.asyncio
+async def test_a_car_that_supports_everything_is_detected(monkeypatch):
+    everything = encode({"a": (20, "bool"), "b": (48, "bool"), "c": (49, "bool")}, {"a": True, "b": True, "c": True})
+    charging = encode_message(8, encode({"presets": (3, "bool")}, {"presets": True}))
+    climate = encode({"rear": (9, "bool")}, {"rear": True}) + encode_message(13, encode({"max": (7, "int32")}, {"max": 3}))
+    vehicle = _vehicle(monkeypatch, _response(_capable_car(flat=everything, charging=charging, climate=climate)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.reports_avg_consumption is True
+    assert vehicle.reports_avg_consumption_since_charge is True
+    assert vehicle.supports_target_soc_presets is True
+    assert vehicle.supports_rear_seat_heating is True
+    assert vehicle.max_climate_timers == 3
+
+
+@pytest.mark.asyncio
+async def test_climate_timer_limit_is_zero_when_the_car_reports_no_timers(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_capable_car(climate=encode({"front": (8, "bool")}, {"front": True}))))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.max_climate_timers == 0
+    assert vehicle.supports_rear_seat_heating is False
+
+
+@pytest.mark.asyncio
+async def test_target_charge_presets_unknown_without_a_settings_block(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_capable_car(charging=encode({"max": (16, "int32")}, {"max": 4}))))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_target_soc_presets is None

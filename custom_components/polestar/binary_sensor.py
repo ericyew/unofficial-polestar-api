@@ -138,7 +138,7 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
     ),
     PolestarBinarySensorDescription(
         key="tank_lid",
-        name="Tank lid",
+        name="Charging lid",
         device_class=BinarySensorDeviceClass.DOOR,
         value_fn=lambda d: _is_open(d.exterior.tank_lid.open_status),
     ),

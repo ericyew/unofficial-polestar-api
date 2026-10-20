@@ -60,6 +60,8 @@ class ClimatizationInfo(ProtoMessage, schema={
     rear_left_seat: HeatingIntensity | None = None
     rear_right_seat: HeatingIntensity | None = None
     steering_wheel: HeatingIntensity | None = None
+    started_at: int | None = None
+    ending_at: int | None = None
 
     @property
     def is_active(self) -> bool:

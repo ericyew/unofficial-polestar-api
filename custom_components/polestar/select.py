@@ -57,10 +57,13 @@ _BATTERY_PRECONDITIONING_MAP = {
 class PolestarSelectDescription(SelectEntityDescription):
     """Select description for command helper state."""
 
+    fetch_attr: str | None = None
+
 
 SELECTS: tuple[PolestarSelectDescription, ...] = (
     PolestarSelectDescription(
         key="target_soc_setting_type",
+        fetch_attr="target_soc_presets",
         name="Target SOC mode",
         entity_category=EntityCategory.CONFIG,
         options=_TARGET_SOC_OPTIONS,
@@ -79,12 +82,14 @@ SELECTS: tuple[PolestarSelectDescription, ...] = (
     ),
     PolestarSelectDescription(
         key="climate_rear_left_seat",
+        fetch_attr="rear_seat_heating",
         name="Climate rear left seat heat",
         entity_category=EntityCategory.CONFIG,
         options=_HEATING_OPTIONS,
     ),
     PolestarSelectDescription(
         key="climate_rear_right_seat",
+        fetch_attr="rear_seat_heating",
         name="Climate rear right seat heat",
         entity_category=EntityCategory.CONFIG,
         options=_HEATING_OPTIONS,
@@ -169,6 +174,7 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
+        self.required_fetch = description.fetch_attr
         # A Polestar 4's steering wheel heating is on/off; it runs any heated level as level3.
         self._steering_on_off = description.key == "climate_steering_wheel" and is_polestar_4(
             self._vehicle.model_name, self._vehicle.vin

@@ -67,6 +67,19 @@ _COMMAND_INVOCATION_SUCCESS = {
 # The climate status the car reports lags a start command by tens of seconds.
 _CLIMATE_START_LAG = 60.0
 
+# Vehicle attribute (False means the car says it lacks the feature) -> names entities depend on.
+_CAPABILITY_FETCHES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("supports_charge_locations", ("charge_locations", "current_charge_location")),
+    ("supports_window_control", ("window_control",)),
+    ("supports_sunroof_control", ("sunroof",)),
+    ("supports_target_soc_presets", ("target_soc_presets",)),
+    ("reports_avg_consumption", ("avg_consumption",)),
+    ("reports_avg_consumption_auto", ("avg_consumption_auto",)),
+    ("reports_avg_consumption_since_charge", ("avg_consumption_since_charge",)),
+    ("supports_rear_seat_heating", ("rear_seat_heating",)),
+)
+_CLIMATE_TIMER_SLOTS = 3
+
 # Attributes whose entities are disabled when the first poll succeeds but returns no data at all.
 _DISABLE_WHEN_EMPTY = ("precleaning",)
 
@@ -175,14 +188,17 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         self._unsupported_streams: set[str] = set()
         self._unsupported_commands: set[str] = set()
         self._unsupported_fetches: set[str] = set()
-        if getattr(vehicle, "supports_charge_locations", None) is False:
-            _LOGGER.info("Vehicle %s reports no charge locations; they will not be polled", vehicle.vin)
-            self._unsupported_fetches.update(("charge_locations", "current_charge_location"))
-        # Not data fetches: capability names that entities use to say they need the feature.
-        if getattr(vehicle, "supports_window_control", None) is False:
-            self._unsupported_fetches.add("window_control")
-        if getattr(vehicle, "supports_sunroof_control", None) is False:
-            self._unsupported_fetches.add("sunroof")
+        # What the car says it lacks. Some names are data fetches that are no longer polled; the
+        # others are capability names that entities use to say they need the feature.
+        for flag, names in _CAPABILITY_FETCHES:
+            if getattr(vehicle, flag, None) is False:
+                _LOGGER.info("Vehicle %s does not support %s", vehicle.vin, ", ".join(names))
+                self._unsupported_fetches.update(names)
+        max_timers = getattr(vehicle, "max_climate_timers", None)
+        if isinstance(max_timers, int):
+            self._unsupported_fetches.update(
+                f"climate_timer_slot_{slot}" for slot in range(max_timers + 1, _CLIMATE_TIMER_SLOTS + 1)
+            )
         self._empty_fetches: set[str] = set()
         self._no_data_fetches: set[str] = set()
         self._climate_started_at: float | None = None

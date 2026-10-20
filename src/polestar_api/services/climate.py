@@ -76,6 +76,14 @@ class ClimateServiceClient:
             return HeatOrCoolAction.COOLING
         return HeatOrCoolAction.NOT_REQUIRED
 
+    @staticmethod
+    def _timestamp_seconds(value) -> int | None:
+        """Seconds since the epoch from a Timestamp message, or ``None`` when it is absent."""
+        if not isinstance(value, bytes):
+            return None
+        seconds = decode(value).get(1)
+        return int(seconds) if isinstance(seconds, int) and seconds > 0 else None
+
     @classmethod
     def _parse_digital_twin(cls, climate_bytes: bytes) -> ClimatizationInfo:
         raw = decode(climate_bytes)
@@ -90,9 +98,11 @@ class ClimateServiceClient:
             target_temperature_celsius=float(target_temp) if isinstance(target_temp, (int, float)) else None,
             front_left_seat=cls._map_seat_heating(raw.get(9)),
             front_right_seat=cls._map_seat_heating(raw.get(10)),
-            rear_right_seat=cls._map_seat_heating(raw.get(11)),
-            rear_left_seat=cls._map_seat_heating(raw.get(12)),
+            rear_left_seat=cls._map_seat_heating(raw.get(11)),
+            rear_right_seat=cls._map_seat_heating(raw.get(12)),
             steering_wheel=cls._map_seat_heating(raw.get(13)),
+            started_at=cls._timestamp_seconds(raw.get(14)),
+            ending_at=cls._timestamp_seconds(raw.get(16)),
         )
 
     @classmethod
