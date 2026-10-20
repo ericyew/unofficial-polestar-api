@@ -200,3 +200,43 @@ async def test_unknown_when_the_car_reports_no_charging_block(monkeypatch):
     await vehicle.async_load_car_information()
 
     assert vehicle.supports_charge_locations is None
+
+
+# The "locks" block of a Polestar 4: lock type, unlock type and trunk unlock, but no window or sunroof control.
+LOCKS_WITHOUT_WINDOWS = encode({"lock_type": (1, "int32"), "unlock_type": (2, "int32"), "trunk": (10, "bool")}, {"lock_type": 2, "unlock_type": 3, "trunk": True})
+LOCKS_WITH_WINDOWS = encode({"windows": (5, "bool"), "sunroof": (6, "bool")}, {"windows": True, "sunroof": True})
+
+
+def _my_car_with_locks(locks: bytes) -> bytes:
+    car = encode(CAR_SCHEMA, {"vin": "VIN0000000000001", "name": "Polestar 4"}) + encode_message(36, locks)
+    return encode_message(1, car) + encode(MY_CAR_SCHEMA, {"owner": True})
+
+
+@pytest.mark.asyncio
+async def test_car_without_window_and_sunroof_control_is_detected(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car_with_locks(LOCKS_WITHOUT_WINDOWS)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_window_control is False
+    assert vehicle.supports_sunroof_control is False
+
+
+@pytest.mark.asyncio
+async def test_car_with_window_and_sunroof_control_is_detected(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car_with_locks(LOCKS_WITH_WINDOWS)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_window_control is True
+    assert vehicle.supports_sunroof_control is True
+
+
+@pytest.mark.asyncio
+async def test_window_and_sunroof_support_is_unknown_without_a_locks_block(monkeypatch):
+    vehicle = _vehicle(monkeypatch, _response(_my_car("VIN0000000000001", "Polestar 4")))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.supports_window_control is None
+    assert vehicle.supports_sunroof_control is None

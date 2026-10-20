@@ -106,6 +106,7 @@ class PolestarSensorDescription(SensorEntityDescription):
     value_fn: Callable[[PolestarVehicleData], StateType | None]
     attrs_fn: Callable[[PolestarVehicleData], dict[str, Any]] | None = None
     fetch_attr: str | None = None
+    required_data: Callable[[PolestarVehicleData], bool] | None = None
 
 
 SENSORS: tuple[PolestarSensorDescription, ...] = (
@@ -327,6 +328,9 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
     ),
     PolestarSensorDescription(
         key="washer_fluid_warning",
+        # Disabled when the car answers the health request but never reports a washer fluid level.
+        required_data=lambda d: d.health is None
+        or d.health.washer_fluid_level_warning != WasherFluidLevelWarning.UNSPECIFIED,
         name="Washer fluid warning",
         device_class=SensorDeviceClass.ENUM,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -583,6 +587,7 @@ class PolestarSensor(PolestarEntity, SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self.required_fetch = description.fetch_attr
+        self.required_data = description.required_data
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
 
     @property

@@ -78,6 +78,8 @@ class Vehicle:
         self.model_year = model_year
         self.model_name = model_name
         self.supports_charge_locations: bool | None = None
+        self.supports_window_control: bool | None = None
+        self.supports_sunroof_control: bool | None = None
 
         self._amp_limit = AmpLimitServiceClient(connection, vin)
         self._availability = AvailabilityServiceClient(connection, vin)
@@ -118,6 +120,9 @@ class Vehicle:
         car = my_car.car
         if car is not None and car.charging is not None:
             self.supports_charge_locations = car.charging.max_number_of_locations > 0
+        if car is not None and car.locks is not None:
+            self.supports_window_control = bool(car.locks.supports_window_control)
+            self.supports_sunroof_control = bool(car.locks.supports_sunroof_control)
         if car is not None:
             self.model_name = self.model_name or car.vehicle_type_name or None
             if self.model_year is None and car.model_year.isdigit():

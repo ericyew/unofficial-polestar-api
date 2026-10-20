@@ -19,6 +19,14 @@ class ChargingCapabilities(ProtoMessage, schema={16: "max_number_of_locations"})
 
 
 @dataclass(frozen=True)
+class LocksCapabilities(ProtoMessage, schema={5: "supports_window_control", 6: "supports_sunroof_control"}):
+    """What the car supports for locks, windows and roof. A feature the car does not send is not supported."""
+
+    supports_window_control: bool = False
+    supports_sunroof_control: bool = False
+
+
+@dataclass(frozen=True)
 class CarDetails(ProtoMessage, schema={
     1: "vin",
     5: "vehicle_type_code",
@@ -27,6 +35,7 @@ class CarDetails(ProtoMessage, schema={
     9: "consumer_software_version",
     10: "market",
     35: "charging",
+    36: "locks",
 }):
     """Identity of a car. ``vehicle_type_name`` is the model name, e.g. ``Polestar 4``."""
 
@@ -37,6 +46,7 @@ class CarDetails(ProtoMessage, schema={
     consumer_software_version: str = ""
     market: str = ""
     charging: ChargingCapabilities | None = None
+    locks: LocksCapabilities | None = None
 
 
 @dataclass(frozen=True)

@@ -84,6 +84,7 @@ class PolestarEntity(CoordinatorEntity[PolestarCoordinator]):
 
     _attr_has_entity_name = True
     required_fetch: str | None = None
+    required_data: Callable[[Any], bool] | None = None
 
     def __init__(self, coordinator: PolestarCoordinator) -> None:
         super().__init__(coordinator)
@@ -150,12 +151,19 @@ def async_filter_supported_entities(
     supported: list[PolestarEntity] = []
     for entity in entities:
         attr = entity.required_fetch
-        if attr is None:
+        check = entity.required_data
+        if attr is None and check is None:
             supported.append(entity)
             continue
+        is_supported = attr is None or coordinator.is_fetch_supported(attr)
+        if is_supported and check is not None and coordinator.data is not None:
+            try:
+                is_supported = bool(check(coordinator.data))
+            except (AttributeError, TypeError):
+                pass
         entity_id = registry.async_get_entity_id(domain, DOMAIN, entity.unique_id)
         entry = registry.async_get(entity_id) if entity_id else None
-        if coordinator.is_fetch_supported(attr):
+        if is_supported:
             if entry is not None and entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
                 registry.async_update_entity(entity_id, disabled_by=None)
             supported.append(entity)

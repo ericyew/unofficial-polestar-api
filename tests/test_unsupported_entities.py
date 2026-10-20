@@ -230,9 +230,10 @@ async def test_other_errors_do_not_mark_fetch_unsupported(monkeypatch):
 
 
 class FakeEntity:
-    def __init__(self, unique_id: str, required_fetch: str | None) -> None:
+    def __init__(self, unique_id: str, required_fetch: str | None, required_data=None) -> None:
         self.unique_id = unique_id
         self.required_fetch = required_fetch
+        self.required_data = required_data
 
 
 def _entry(unique_id: str, disabled_by=None) -> SimpleNamespace:
@@ -416,3 +417,61 @@ def test_entities_the_integration_no_longer_provides_are_removed_from_the_regist
 
     assert registry.removed == ["button.unlock"]
     assert "button.honk" in registry.entries
+
+
+def test_entity_is_disabled_when_the_data_check_says_the_car_never_reports_it(monkeypatch):
+    registry = FakeRegistry({"sensor.washer": _entry("v_washer")})
+    _, entity_module = _load(monkeypatch, registry)
+    coordinator = SimpleNamespace(is_fetch_supported=lambda attr: True, data=SimpleNamespace(health="unspecified"))
+    entity = FakeEntity("v_washer", None, required_data=lambda data: data.health != "unspecified")
+
+    result = entity_module.async_filter_supported_entities(None, coordinator, "sensor", [entity])
+
+    assert result == []
+    assert registry.updates == [("sensor.washer", RegistryEntryDisabler.INTEGRATION)]
+
+
+def test_entity_stays_when_the_data_check_passes_or_no_data_has_arrived_yet(monkeypatch):
+    registry = FakeRegistry()
+    _, entity_module = _load(monkeypatch, registry)
+    entity = FakeEntity("v_washer", None, required_data=lambda data: data.health != "unspecified")
+
+    reported = SimpleNamespace(is_fetch_supported=lambda attr: True, data=SimpleNamespace(health="no_warning"))
+    not_yet = SimpleNamespace(is_fetch_supported=lambda attr: True, data=None)
+
+    assert entity_module.async_filter_supported_entities(None, reported, "sensor", [entity]) == [entity]
+    assert entity_module.async_filter_supported_entities(None, not_yet, "sensor", [entity]) == [entity]
+
+
+def test_a_failing_data_check_does_not_disable_the_entity(monkeypatch):
+    _, entity_module = _load(monkeypatch, FakeRegistry())
+
+    def broken(data):
+        raise AttributeError("no health data")
+
+    entity = FakeEntity("v_washer", None, required_data=broken)
+    coordinator = SimpleNamespace(is_fetch_supported=lambda attr: True, data=SimpleNamespace())
+
+    assert entity_module.async_filter_supported_entities(None, coordinator, "sensor", [entity]) == [entity]
+
+
+def test_car_without_window_or_sunroof_control_disables_those_features(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+    vehicle = FakeVehicle({})
+    vehicle.supports_window_control = False
+    vehicle.supports_sunroof_control = False
+
+    coordinator = module.PolestarCoordinator(None, vehicle, SimpleNamespace(options={}))
+
+    assert not coordinator.is_fetch_supported("window_control")
+    assert not coordinator.is_fetch_supported("sunroof")
+
+
+def test_window_and_sunroof_stay_enabled_when_supported_or_unknown(monkeypatch):
+    module, _ = _load(monkeypatch, FakeRegistry())
+    supported = FakeVehicle({})
+    supported.supports_window_control = True
+    supported.supports_sunroof_control = True
+
+    assert module.PolestarCoordinator(None, supported, SimpleNamespace(options={})).is_fetch_supported("window_control")
+    assert module.PolestarCoordinator(None, FakeVehicle({}), SimpleNamespace(options={})).is_fetch_supported("sunroof")

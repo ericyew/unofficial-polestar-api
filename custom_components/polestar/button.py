@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from polestar_api.models.honkflash import HonkFlashAction
 
 from .const import DOMAIN
-from .entity import PolestarEntity, async_remove_registered_entities
+from .entity import PolestarEntity, async_filter_supported_entities, async_remove_registered_entities
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,6 +23,7 @@ class PolestarButtonDescription(ButtonEntityDescription):
 
     press_fn: Callable[[PolestarButton], Awaitable[Any]]
     capability: str | None = None
+    fetch_attr: str | None = None
 
 
 BUTTONS: tuple[PolestarButtonDescription, ...] = (
@@ -67,6 +68,7 @@ BUTTONS: tuple[PolestarButtonDescription, ...] = (
     ),
     PolestarButtonDescription(
         key="open_windows",
+        fetch_attr="window_control",
         name="Open windows",
         icon="mdi:window-open",
         press_fn=lambda button: button.coordinator.async_open_windows(),
@@ -74,6 +76,7 @@ BUTTONS: tuple[PolestarButtonDescription, ...] = (
     ),
     PolestarButtonDescription(
         key="close_windows",
+        fetch_attr="window_control",
         name="Close windows",
         icon="mdi:window-closed",
         press_fn=lambda button: button.coordinator.async_close_windows(),
@@ -97,9 +100,8 @@ async def async_setup_entry(
         async_remove_registered_entities(
             hass, "button", [f"{coordinator.vehicle.vin}_{key}" for key in REMOVED_BUTTON_KEYS]
         )
-        for desc in BUTTONS:
-            entities.append(PolestarButton(coordinator, desc))
-    async_add_entities(entities)
+        entities = [PolestarButton(coordinator, desc) for desc in BUTTONS]
+        async_add_entities(async_filter_supported_entities(hass, coordinator, "button", entities))
 
 
 class PolestarButton(PolestarEntity, ButtonEntity):
@@ -110,6 +112,7 @@ class PolestarButton(PolestarEntity, ButtonEntity):
     def __init__(self, coordinator, description: PolestarButtonDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self.required_fetch = description.fetch_attr
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
 
     @property

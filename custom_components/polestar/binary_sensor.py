@@ -131,6 +131,7 @@ BINARY_SENSORS: tuple[PolestarBinarySensorDescription, ...] = (
     ),
     PolestarBinarySensorDescription(
         key="sunroof",
+        fetch_attr="sunroof",
         name="Sunroof",
         device_class=BinarySensorDeviceClass.WINDOW,
         value_fn=lambda d: _is_open(d.exterior.sunroof.open_status),

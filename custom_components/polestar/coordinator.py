@@ -178,6 +178,11 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
         if getattr(vehicle, "supports_charge_locations", None) is False:
             _LOGGER.info("Vehicle %s reports no charge locations; they will not be polled", vehicle.vin)
             self._unsupported_fetches.update(("charge_locations", "current_charge_location"))
+        # Not data fetches: capability names that entities use to say they need the feature.
+        if getattr(vehicle, "supports_window_control", None) is False:
+            self._unsupported_fetches.add("window_control")
+        if getattr(vehicle, "supports_sunroof_control", None) is False:
+            self._unsupported_fetches.add("sunroof")
         self._empty_fetches: set[str] = set()
         self._no_data_fetches: set[str] = set()
         self._climate_started_at: float | None = None
