@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from polestar_api.models.honkflash import HonkFlashAction
 
 from .const import DOMAIN
-from .entity import PolestarEntity
+from .entity import PolestarEntity, async_remove_registered_entities
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -79,14 +79,10 @@ BUTTONS: tuple[PolestarButtonDescription, ...] = (
         press_fn=lambda button: button.coordinator.async_close_windows(),
         capability="close_windows",
     ),
-    PolestarButtonDescription(
-        key="unlock_trunk",
-        name="Unlock trunk",
-        icon="mdi:car-back",
-        press_fn=lambda button: button.coordinator.async_unlock_trunk(),
-        capability="unlock_trunk",
-    ),
 )
+
+# Buttons replaced by other entities; their registry entries are removed at setup.
+REMOVED_BUTTON_KEYS = ("unlock_trunk",)
 
 
 async def async_setup_entry(
@@ -98,6 +94,9 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     entities = []
     for coordinator in data["coordinators"].values():
+        async_remove_registered_entities(
+            hass, "button", [f"{coordinator.vehicle.vin}_{key}" for key in REMOVED_BUTTON_KEYS]
+        )
         for desc in BUTTONS:
             entities.append(PolestarButton(coordinator, desc))
     async_add_entities(entities)

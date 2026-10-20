@@ -162,3 +162,13 @@ def async_filter_supported_entities(
         elif entry is not None and entry.disabled_by is None:
             registry.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
     return supported
+
+
+@callback
+def async_remove_registered_entities(hass: HomeAssistant, domain: str, unique_ids: list[str]) -> None:
+    """Remove registry entries for entities this integration no longer provides."""
+    registry = er.async_get(hass)
+    for unique_id in unique_ids:
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
+        if entity_id is not None:
+            registry.async_remove(entity_id)

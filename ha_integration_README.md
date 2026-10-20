@@ -26,10 +26,10 @@ Features vary between models, and are yet to be fully documented
 | Sensor | 48 | Battery level, charging status, availability reason, climate status, health warnings, tyre pressures, charge locations |
 | Binary sensor | 25 | Charging, plugged in, locked, doors, windows, hood, tailgate, tank lid, available |
 | Device tracker | 2 | GPS location, parked location |
-| Lock | 1 | Central lock |
+| Lock | 2 | Central lock, boot lock (unlock opens the boot; lock relocks the whole car) |
 | Switch | 4 | Climate, pre-cleaning, charging, charge timer |
 | Number | 4 | Target SOC, charging amp limit, climate target temperature, timer target temperature |
-| Button | 7 | Flash lights, honk, honk and flash, refresh, open/close windows, unlock trunk |
+| Button | 6 | Flash lights, honk, honk and flash, refresh, open/close windows |
 | Select | 11 | Target SOC mode, climate start seat/steering heating, climate timer default seat/steering heating and battery preconditioning |
 | Time | 2 | Charge timer start and stop |
 | Calendar | 3 | Parking climate timer slots |

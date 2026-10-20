@@ -33,6 +33,7 @@ class FakeRegistry:
     def __init__(self, entries: dict[str, SimpleNamespace] | None = None) -> None:
         self.entries = entries or {}
         self.updates: list[tuple[str, object]] = []
+        self.removed: list[str] = []
 
     def async_get_entity_id(self, domain, platform, unique_id):
         for entity_id, entry in self.entries.items():
@@ -42,6 +43,10 @@ class FakeRegistry:
 
     def async_get(self, entity_id):
         return self.entries.get(entity_id)
+
+    def async_remove(self, entity_id):
+        self.removed.append(entity_id)
+        del self.entries[entity_id]
 
     def async_update_entity(self, entity_id, *, disabled_by):
         self.updates.append((entity_id, disabled_by))
@@ -401,3 +406,13 @@ def test_charge_locations_stay_enabled_when_supported_or_unknown(monkeypatch):
 
     assert _new_coordinator(module, True).is_fetch_supported("charge_locations")
     assert _new_coordinator(module, None).is_fetch_supported("charge_locations")
+
+
+def test_entities_the_integration_no_longer_provides_are_removed_from_the_registry(monkeypatch):
+    registry = FakeRegistry({"button.unlock": _entry("v_unlock_trunk"), "button.honk": _entry("v_honk")})
+    _, entity_module = _load(monkeypatch, registry)
+
+    entity_module.async_remove_registered_entities(None, "button", ["v_unlock_trunk", "v_never_existed"])
+
+    assert registry.removed == ["button.unlock"]
+    assert "button.honk" in registry.entries

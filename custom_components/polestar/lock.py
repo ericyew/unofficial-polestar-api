@@ -128,14 +128,14 @@ class PolestarLock(PolestarEntity, LockEntity):
 
 
 class PolestarTailgateLock(PolestarLock):
-    """Boot (tailgate) lock.
+    """Boot (tailgate) lock, replacing the old "Unlock trunk" button.
 
     The car unlocks the boot with its own trunk-unlock command, and relocks it with the
     normal lock command (the Polestar app has no separate lock-boot command either), so
     locking this entity locks the whole car.
     """
 
-    _attr_name = "Tailgate lock"
+    _attr_name = "Boot lock"
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
