@@ -35,6 +35,7 @@ from polestar_api.models.availability import UnavailableReason, UsageMode
 from polestar_api.models.battery import (
     ChargerConnectionStatus,
     ChargerPowerStatus,
+    ColdBatteryStatus,
     ChargingStatus,
     ChargingType,
 )
@@ -229,6 +230,14 @@ SENSORS: tuple[PolestarSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         options=enum_options(ChargerPowerStatus),
         value_fn=lambda d: enum_name(d.battery.charger_power_status) if d.battery else None,
+    ),
+    PolestarSensorDescription(
+        key="cold_battery_status",
+        name="Cold battery status",
+        icon="mdi:snowflake",
+        device_class=SensorDeviceClass.ENUM,
+        options=enum_options(ColdBatteryStatus),
+        value_fn=lambda d: enum_name(d.battery.cold_battery_status) if d.battery else None,
     ),
     PolestarSensorDescription(
         key="avg_consumption",

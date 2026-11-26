@@ -124,6 +124,8 @@ class Health(ProtoMessage, schema={
     40: "front_right_tyre_pressure_kpa",
     41: "rear_left_tyre_pressure_kpa",
     42: "rear_right_tyre_pressure_kpa",
+    # High-voltage battery safety
+    48: "battery_thermal_event_triggered",
 }):
     timestamp: Timestamp | None = None
     # Service
@@ -176,6 +178,8 @@ class Health(ProtoMessage, schema={
     front_right_tyre_pressure_kpa: float = 0.0
     rear_left_tyre_pressure_kpa: float = 0.0
     rear_right_tyre_pressure_kpa: float = 0.0
+    # High-voltage battery safety (the car omits it when no event is triggered)
+    battery_thermal_event_triggered: bool = False
 
     @property
     def any_light_failure(self) -> bool:

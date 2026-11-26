@@ -16,6 +16,16 @@ class ChargerConnectionStatus(IntEnum):
     FAULT = 3
 
 
+class ColdBatteryStatus(IntEnum):
+    """C3 Battery.ColdBatteryStatus: whether the battery is, or is predicted to be, cold."""
+    UNSPECIFIED = 0
+    NORMAL = 1
+    COLD_PREDICTED = 2
+    COLD_AND_LOW_SOC_PREDICTED = 3
+    COLD = 4
+    COLD_AND_LOW_SOC = 5
+
+
 class ChargingStatus(IntEnum):
     """C3 Battery.ChargingStatus."""
     UNSPECIFIED = 0
@@ -75,6 +85,7 @@ class Battery(ProtoMessage, schema={
     24: "consumption_pct_auto",
     25: "consumption_pct_since_charge",
     26: "charger_power_status",
+    30: "cold_battery_status",
 }):
     timestamp: Timestamp | None = None
     charge_level: float = 0.0
@@ -102,6 +113,7 @@ class Battery(ProtoMessage, schema={
     consumption_pct_auto: float = 0.0
     consumption_pct_since_charge: float = 0.0
     charger_power_status: ChargerPowerStatus = ChargerPowerStatus.UNSPECIFIED
+    cold_battery_status: ColdBatteryStatus = ColdBatteryStatus.UNSPECIFIED
 
     @property
     def is_charging(self) -> bool:
