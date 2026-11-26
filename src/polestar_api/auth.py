@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 import os
 import re
@@ -11,13 +12,13 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import ssl
 
 import httpx
 
-from .exceptions import AuthError, TokenExpiredError
+from .exceptions import AuthError, MfaRequiredError, TokenExpiredError
 
 # Pre-build SSL context at import time so httpx never triggers
 # blocking load_verify_locations inside the HA event loop (Python 3.14).
@@ -28,6 +29,14 @@ OIDC_DISCOVERY = f"{OIDC_PROVIDER}/.well-known/openid-configuration"
 CLIENT_ID = "lp8dyrd_10"
 REDIRECT_URI = "polestar-explore://explore.polestar.com"
 SCOPES = "openid profile email customer:attributes customer:attributes:write"
+
+# Since late November 2026 Polestar ID (PingFederate) hands the login over to a
+# Keycloak realm on auth.polestar.com. The login page embeds a ``kcContext``
+# object with the form target in ``loginAction`` and the page type in ``pageId``.
+_KC_LOGIN_ACTION_RE = re.compile(r'"loginAction":\s*"([^"]+)"')
+_KC_PAGE_ID_RE = re.compile(r'"pageId":\s*"([^"]+)"')
+_KC_INVALID_CREDENTIALS = "Invalid username or password"
+_MAX_REDIRECTS = 10
 
 
 @dataclass
@@ -112,6 +121,22 @@ def _generate_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
+def _unescape_js_url(value: str) -> str:
+    """Undo the JS/HTML escaping Keycloak applies to URLs in ``kcContext``."""
+    return html.unescape(value.replace("\\/", "/"))
+
+
+def _is_polestar_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    return parsed.scheme == "https" and (host == "polestar.com" or host.endswith(".polestar.com"))
+
+
+def _kc_page_id(text: str) -> str | None:
+    match = _KC_PAGE_ID_RE.search(text)
+    return match.group(1) if match else None
+
+
 def _should_follow_callback(location: str) -> bool:
     """Return whether the callback URL can be fetched over HTTP."""
     return urlparse(location).scheme in {"http", "https"}
@@ -127,6 +152,7 @@ class AuthManager:
         self._token_endpoint: str | None = None
         self._email: str | None = None
         self._password: str | None = None
+        self._mfa_error: MfaRequiredError | None = None
 
     @property
     def access_token(self) -> str | None:
@@ -136,6 +162,7 @@ class AuthManager:
         """Full OIDC/PKCE auth flow. Tries token refresh first if available."""
         self._email = email
         self._password = password
+        self._mfa_error = None
 
         # Try loading stored tokens
         self._tokens = await self._token_store.load()
@@ -181,11 +208,19 @@ class AuthManager:
             self._token_endpoint = config["token_endpoint"]
 
     async def _full_auth(self, email: str, password: str) -> None:
+        # Every password login can send another one-time code, so stop after the first request
+        if self._mfa_error:
+            raise self._mfa_error
+
         if not self._auth_endpoint or not self._token_endpoint:
             await self._discover_endpoints()
 
         code_verifier, code_challenge = _generate_pkce()
-        code = await self._authorize(code_challenge, email, password)
+        try:
+            code = await self._authorize(code_challenge, email, password)
+        except MfaRequiredError as err:
+            self._mfa_error = err
+            raise
         await self._exchange_token(code, code_verifier)
 
     async def _authorize(self, code_challenge: str, email: str, password: str) -> str:
@@ -205,7 +240,16 @@ class AuthManager:
             # Step 1: GET auth endpoint — lands on login page
             r = await client.get(self._auth_endpoint, params=params)
 
-            # Extract resume path from PingFederate HTML/JS
+            kc_match = _KC_LOGIN_ACTION_RE.search(r.text)
+            if kc_match:
+                login_action = urljoin(str(r.url), _unescape_js_url(kc_match.group(1)))
+                if not _is_polestar_url(login_action):
+                    raise AuthError("Login page points outside polestar.com; password not sent")
+                return await self._authorize_keycloak(
+                    client, login_action, params, email, password
+                )
+
+            # Legacy PingFederate login form
             resume_match = re.search(r'(?:url|action):\s*"(.+)"', r.text)
             if not resume_match:
                 raise AuthError(f"Could not find resume path in auth response (status {r.status_code})")
@@ -255,6 +299,51 @@ class AuthManager:
             if _should_follow_callback(location):
                 await client.get(location)
 
+        return code
+
+    async def _authorize_keycloak(
+        self,
+        client: httpx.AsyncClient,
+        login_action: str,
+        params: dict[str, str],
+        email: str,
+        password: str,
+    ) -> str:
+        """Log in on the Keycloak page and follow the redirects back to the app."""
+        r = await client.post(
+            login_action,
+            data={"username": email, "password": password, "credentialId": ""},
+            follow_redirects=False,
+        )
+        if r.status_code not in (301, 302, 303, 307, 308):
+            page_id = _kc_page_id(r.text)
+            if _KC_INVALID_CREDENTIALS in r.text:
+                raise AuthError("Invalid username or password")
+            if page_id and page_id != "login":
+                # e.g. a one-time code sent by SMS or e-mail
+                raise MfaRequiredError(
+                    f"Polestar ID asked for an additional step after the password ({page_id}), "
+                    "e.g. a one-time code. Sign in once at polestar.com with the same account, then retry."
+                )
+            raise AuthError(f"Keycloak login failed (status {r.status_code}, page {page_id or 'unknown'})")
+
+        # Keycloak -> PingFederate (/sp/.../cb.openid) -> app redirect URI with ?code=
+        location = ""
+        for _ in range(_MAX_REDIRECTS):
+            location = urljoin(str(r.url), r.headers.get("location", ""))
+            if not _should_follow_callback(location) or location.startswith(REDIRECT_URI):
+                break
+            r = await client.get(location, follow_redirects=False)
+            if r.status_code not in (301, 302, 303, 307, 308):
+                break
+        else:
+            raise AuthError("Too many redirects after Keycloak login")
+
+        code = parse_qs(urlparse(location).query).get("code", [None])[0]
+        if code is None:
+            if _should_follow_callback(location):
+                location = f"{urlparse(location).netloc}{urlparse(location).path}"
+            raise AuthError(f"No auth code after Keycloak login (status {r.status_code}, at {location})")
         return code
 
     async def _exchange_token(self, code: str, code_verifier: str) -> None:
