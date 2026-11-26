@@ -399,7 +399,7 @@ class PolestarCoordinator(DataUpdateCoordinator[PolestarVehicleData]):
 
         if self.data is None:
             self._record_no_data_fetches()
-        data = PolestarVehicleData(**values)
+        data = replace(self.data or previous, **values)
         self._update_installed_version_cache(data.software)
         self._unsupported_commands.clear()
         self._restart_dead_streams()
