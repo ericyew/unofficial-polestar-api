@@ -86,6 +86,7 @@ class Vehicle:
         self.reports_avg_consumption_since_charge: bool | None = None
         self.supports_rear_seat_heating: bool | None = None
         self.max_climate_timers: int | None = None
+        self.steering_wheel_heat_levels: int | None = None
 
         self._amp_limit = AmpLimitServiceClient(connection, vin)
         self._availability = AvailabilityServiceClient(connection, vin)
@@ -137,6 +138,7 @@ class Vehicle:
             self.supports_rear_seat_heating = bool(car.parking_climatization.supports_rear_seats_settings)
             timers = car.parking_climatization.timers
             self.max_climate_timers = timers.max_number if timers is not None else 0
+            self.steering_wheel_heat_levels = car.parking_climatization.steering_wheel_setting_levels or None
         if car is not None and car.locks is not None:
             self.supports_window_control = bool(car.locks.supports_window_control)
             self.supports_sunroof_control = bool(car.locks.supports_sunroof_control)

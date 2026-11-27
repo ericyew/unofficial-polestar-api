@@ -14,7 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN
 from .coordinator import PolestarCoordinator
 from .entity import OptimisticStateMixin, PolestarEntity, async_filter_supported_entities
-from .utils import is_polestar_4, normalise_steering_wheel_option
+from .utils import normalise_steering_wheel_option
 from polestar_api.models.charging import ChargeTargetLevelSettingType
 from polestar_api.models.climatization import HeatingIntensity
 from polestar_api.models.parking_climate_timer import (
@@ -175,9 +175,10 @@ class PolestarSelect(OptimisticStateMixin, PolestarEntity, RestoreEntity, Select
         self.entity_description = description
         self._attr_unique_id = f"{self._vehicle.vin}_{description.key}"
         self.required_fetch = description.fetch_attr
-        # A Polestar 4's steering wheel heating is on/off; it runs any heated level as level3.
-        self._steering_on_off = description.key == "climate_steering_wheel" and is_polestar_4(
-            self._vehicle.model_name, self._vehicle.vin
+        # A car with one steering wheel heat level is on/off; it runs any heated level as level3.
+        self._steering_on_off = (
+            description.key == "climate_steering_wheel"
+            and getattr(self._vehicle, "steering_wheel_heat_levels", None) == 1
         )
         if self._steering_on_off:
             self._attr_options = _STEERING_WHEEL_OPTIONS

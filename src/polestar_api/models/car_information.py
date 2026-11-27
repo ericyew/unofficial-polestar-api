@@ -38,11 +38,14 @@ class ParkingClimatizationTimers(ProtoMessage, schema={7: "max_number"}):
 class ParkingClimatizationCapabilities(ProtoMessage, schema={
     9: "supports_rear_seats_settings",
     13: "timers",
+    16: "steering_wheel_setting_levels",
 }):
-    """What the car supports for parking climate: rear seat heating and how many timers."""
+    """What the car supports for parking climate: rear seat heating, how many timers, and the
+    number of steering wheel heat levels besides off (0 when the car does not send it)."""
 
     supports_rear_seats_settings: bool = False
     timers: ParkingClimatizationTimers | None = None
+    steering_wheel_setting_levels: int = 0
 
 
 @dataclass(frozen=True)

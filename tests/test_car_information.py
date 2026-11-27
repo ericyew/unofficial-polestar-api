@@ -308,3 +308,14 @@ async def test_target_charge_presets_unknown_without_a_settings_block(monkeypatc
     await vehicle.async_load_car_information()
 
     assert vehicle.supports_target_soc_presets is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("sent", "expected"), [(1, 1), (3, 3), (0, None)])
+async def test_steering_wheel_heat_levels_are_read(monkeypatch, sent, expected):
+    climate = encode({"front": (8, "bool"), "levels": (16, "int32")}, {"front": True, "levels": sent})
+    vehicle = _vehicle(monkeypatch, _response(_capable_car(climate=climate)))
+
+    await vehicle.async_load_car_information()
+
+    assert vehicle.steering_wheel_heat_levels == expected
